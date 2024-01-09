@@ -1,4 +1,7 @@
 # NTP Timer
+# Based on : https://github.com/lammersch/ntp-timer/blob/main/ntp_timer.py
+# Modified by Greig for LED multiplex drive.
+
 
 # Imports
 import time 
@@ -15,19 +18,45 @@ from secrets import secrets
 # Led for blinking
 led = machine.Pin("LED", machine.Pin.OUT)
 
+anode = [
+    Pin(16, Pin.OUT), # a
+    Pin(17, Pin.OUT), # b
+    Pin(18, Pin.OUT), # c
+    Pin(19, Pin.OUT), # d
+    Pin(20, Pin.OUT), # e
+    Pin(21, Pin.OUT), # f
+    Pin(22, Pin.OUT), # g
+    Pin(26, Pin.OUT)  # dp
+    ]  
 
-# Constants
-UTC_OFFSET = 2 * 60 * 60 # in seconds
-#UTC_OFFSET = 0 # in seconds
+cathode = [
+    Pin( 8, Pin.OUT), # H_
+    Pin( 9, Pin.OUT), # _H
+    Pin(10, Pin.OUT), # M_
+    Pin(11, Pin.OUT), # _M
+    Pin(12, Pin.OUT), # S_
+    Pin(13, Pin.OUT)  # _S
+    ]
+
+#//////////////////////////////////
+#//    Declare some constants    //
+#//////////////////////////////////
+
+
+UTC_OFFSET = 10 * 60 * 60 # in seconds
+
+display_seconds = True	# 'display' will rwite to six segments when true, four otherwise
+display_12hr	= True	# 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
+blank = False			# Future - manually blank the display
 
 # Make naming more convenient
 # See: https://docs.python.org/3/library/time.html#time.struct_time
 tm_year = 0
-tm_mon = 1 # range [1, 12]
+tm_mon  = 1 # range [1, 12]
 tm_mday = 2 # range [1, 31]
 tm_hour = 3 # range [0, 23]
-tm_min = 4 # range [0, 59]
-tm_sec = 5 # range [0, 61] in strftime() description
+tm_min  = 4 # range [0, 59]
+tm_sec  = 5 # range [0, 61] in strftime() description
 tm_wday = 6 # range 8[0, 6] Monday = 0
 tm_yday = 7 # range [0, 366]
 tm_isdst = 8 # 0, 1 or -1 
@@ -36,21 +65,49 @@ tm_isdst = 8 # 0, 1 or -1
 time_is_set = False
 wifi_is_connected = False
 
+
+#   Bitmap calc's to directly address the segments:
+#      1
+#     ----
+#    |    |
+# 32 |    | 2
+#    |    |
+#     ----     <-- 64
+#    |    |
+# 16 |    | 4
+#    |    |
+#     ----
+#      8
+
+chartable = [
+  0b00111111, # 0
+  0b00000110,
+  0b01011011,
+  0b01001111,
+  0b01100110,
+  0b01101101,
+  0b01111101, # 6
+  0b00000111,
+  0b01111111,
+  0b01101111, # 9
+  0b00000000  # off
+]
+
 # Logging
 import os
 logfile = open('log.txt', 'a')
 # duplicate stdout and stderr to the log file
 os.dupterm(logfile)
 
-"""
+'''
    wifi_connect() function. Called by set_time()
    Parameters: None
    Return: None
-"""
+'''
 def wifi_connect():
     # Load login data from different file for safety reasons
-    ssid = secrets['ssid']
-    password = secrets['pw']
+    ssid = 'WiFi' # secrets['ssid']
+    password = '0400553043' # secrets['pw']
 
     # Connect to WiFi
     wlan = network.WLAN(network.STA_IF)
@@ -73,46 +130,45 @@ def wifi_connect():
             status = wlan.ifconfig()
             print( 'ip = ' + status[0] )
     
-"""
+'''
    cet_time() function. Called by set_time()
    Parameters: None
    Return: cet
-"""
-# DST calculations
-# This code returns the Central European Time (CET) including daylight saving
-# Winter (CET) is UTC+1H Summer (CEST) is UTC+2H
-# Changes happen last Sundays of March (CEST) and October (CET) at 01:00 UTC
+'''
+# DST calculations - modified to AEST/AEDT from the original
+# Changes happen first Sunday of March and October at 02:00 local time
 # Ref. formulas : http://www.webexhibits.org/daylightsaving/i.html
 #                 Since 1996, valid through 2099
 
 
 def cet_time():
     year = time.localtime()[0]       #get current year
-    HHMarch   = time.mktime((year,3 ,(31-(int(5*year/4+4))%7),1,0,0,0,0,0)) #Time of March change to CEST
-    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),1,0,0,0,0,0)) #Time of October change to CET
+    HHApril   = time.mktime((year,4 ,(31-(int(5*year/4+4))%7),1,0,0,0,0,0)) # In April drop back to AEST
+    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),1,0,0,0,0,0)) # Advance to DST in October 
     now=time.time()
-    if now < HHMarch :               # we are before last sunday of march
-        cet=time.localtime(now+3600) # CET:  UTC+1H
-    elif now < HHOctober :           # we are before last sunday of october
-        cet=time.localtime(now+7200) # CEST: UTC+2H
-        print("we are before last sunday of october")
+    if now < HHApril :               # we are before first sunday in April (AEDT)
+        cet=time.localtime(now+39600) # AEDT:  UTC+11
+        print("we are on Summer time: Jan - April")
+    elif now < HHOctober :           # we are before last sunday in october (Winter time)
+        cet=time.localtime(now+36000) # AEST:  UTC+10
+        print("we are on Winter time")
     else:                            # we are after last sunday of october
-        cet=time.localtime(now+3600) # CET:  UTC+1H
-        print("we are after last sunday of october")
+        cet=time.localtime(now+39600) # CET:  UTC+1H
+        print("we are on Summer time: October - December")
     return(cet)
 
-"""
+'''
    set_time() function. Called by main()
    Parameters: None
    Return: None
-"""
+'''
 def set_time():
     # ntp_host = ["0.europe.pool.ntp.org", "1.europe.pool.ntp.org", "2.europe.pool.ntp.org", "3.europe.pool.ntp.org"] # Not used
     
     if not wifi_is_connected:
         print("Wifi is not connected, connecting")
         wifi_connect()
-    print("UTC time before synchronization：%s" %str(time.localtime()))
+    print("UTC time synchronization：%s" %str(time.localtime()))
     
     # if needed, we'll cycle over ntp-servers here using:
     # ntptime.host = "1.europe.pool.ntp.org"
@@ -124,10 +180,10 @@ def set_time():
             print("ETIMEDOUT. Returning False")
             time.sleep(5)
         
-    print("UTC time after synchronization：%s" %str(time.localtime()))
+    print("UTC after NTP sync：%s" %str(time.localtime()))
     #t = time.localtime(time.time() + UTC_OFFSET) # Apply UTC offset
     t = cet_time()
-    print("CET time after synchronization : %s" %str(t))
+    print("Local time : %s" %str(t))
     
     # Set local clock to adjusted time
     machine.RTC().datetime((t[tm_year], t[tm_mon], t[tm_mday], t[tm_wday] + 1, t[tm_hour], t[tm_min], t[tm_sec], 0))
@@ -136,36 +192,97 @@ def set_time():
     #WLAN.disconnect()
     #print("Disconnected WiFi")
 
-"""
+'''
     schedule() function
     Parameters: t
     Return: none
-"""
-import door_operations # script that you want to execute on a certain moment
+'''
 
 # Todo: create crontab like structure with: minute / hour / day of month / month / day of week / command
 # Todo: check what happens when scheduled tasks overlap (uasyncio)
 
 def schedule(t):
-    if t[tm_hour] == 17 and t[tm_min] == 45 and t[tm_sec] == 00: # Define seconds, or it will run every second...
-        print("Executing doorOperations")
-        door_operations.closeDoor()
-    
-    if t[tm_hour] == 07 and t[tm_min] == 45 and t[tm_sec] == 00: # Define seconds, or it will run every second...
-        print("Executing doorOperations")
-        door_operations.openDoor()
+    #if t[tm_hour] == 17 and t[tm_min] == 45 and t[tm_sec] == 00: # Define seconds, or it will run every second...
+    #    print("Executing doorOperations")
+    #    door_operations.closeDoor()
     
     # Sync clock every day
-    if t[tm_hour] == 08 and t[tm_min] == 15 and t[tm_sec] == 0:
+    if t[tm_hour] == 03 and t[tm_min] == 30 and t[tm_sec] == 0:
         time_is_set = False
         print("Synchronizing time")
         set_time()
 
-"""
-   main() function.
-   Parameters: None
-   Return: None
-"""
+'''
+Takes the passed time and prepares it in readiness to write to the displays
+It then calls 'show_char' 4 (or 6) times.
+Segments are the ANODES for this common-cathode display
+Cathodes are the common cathode of each character respectively.
+'''
+def display(t):
+
+    # display_seconds = True	# 'display' will write to six segments when true, four otherwise
+    # display_12hr	= True	# 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
+
+    # Time 't' is a tuple containing year, month, mday, hour (24 hour format), minute, second, weekday, yearday
+    _, _, _, HH, MM, SS, _, _ = t
+  
+    # Write the hour. If display_12hr = True, convert to 12 hour time and blank the leading digit if it's a zero:
+    if display_12hr == True:
+        if HH > 12:
+            HH -= 12
+        if HH < 10:
+            show_char(10, 0)	# A value of 10 will blank the display
+        else:
+            show_char(HH, 0)	#
+        units_value = HH % 10
+        show_char(units_value, 1)
+    else:
+        tens_value = HH / 10
+        show_char(tens_value, 0)
+        units_value = HH % 10    
+        show_char(units_value, 1)
+    
+    count = 2
+    for value in MM, SS:
+        tens_value = value / 10
+        show_char(tens_value, count)
+        count += 1
+        units_value = value % 10    
+        show_char(units_value, count)
+        count += 1
+        
+        
+'''
+Takes a given single-digit decimal and writes that to the nominated display
+A 'value' of -1 is the signal to blank the character
+'''
+def show_char(value, display_number):
+
+    print(f'show_char reports value = {int(value)} & display is {display_number}')
+    # segment_walk = 0b00000001
+    for x in range (0,6):
+        greig = chartable[int(value)]  & (0b00000001 << x)
+        anode[x].value(greig)
+        pass
+    cathode[display_number].on
+    time.sleep_ms(20)
+    cathode[display_number].off
+                  
+    #digitalWriteFast(tensPinTable[0],(chartable[ten]  & 0b00000001)); // a
+    #digitalWriteFast(tensPinTable[1],(chartable[ten]  & 0b00000010)); // b
+    #digitalWriteFast(tensPinTable[2],(chartable[ten]  & 0b00000100)); // c
+    #digitalWriteFast(tensPinTable[3],(chartable[ten]  & 0b00001000)); // d
+    #digitalWriteFast(tensPinTable[4],(chartable[ten]  & 0b00010000)); // e
+    #digitalWriteFast(tensPinTable[5],(chartable[ten]  & 0b00100000)); // f
+    #digitalWriteFast(tensPinTable[6],(chartable[ten]  & 0b01000000)); // g
+
+  
+  
+
+
+#//////////////////////////////////
+#//            MAIN             //
+#//////////////////////////////////
 
 def main():
     if not time_is_set:
@@ -175,8 +292,10 @@ def main():
     o_sec = time.localtime()[5]
 
     while True:
-        t = time.localtime()
-        if  o_sec != t[5]:
+        if not blank:
+            display(t)		# Write the time to the LEDs
+        t = time.localtime()	# read the current time
+        if  o_sec != t[5]:		# Every second, toggle the on-board LED & check the schedule
             o_sec = t[5]
             led.on()
             schedule(t)
