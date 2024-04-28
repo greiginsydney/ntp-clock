@@ -13,7 +13,7 @@ from machine import Pin # for LED
 import ntptime
 
 # to not show Wifi credentials in this code
-from secrets import secrets
+#from secrets import secrets
 
 # Led for blinking
 led = machine.Pin("LED", machine.Pin.OUT)
@@ -82,14 +82,14 @@ wifi_is_connected = False
 chartable = [
   0b00111111, # 0
   0b00000110,
-  0b01011011,
-  0b01001111,
-  0b01100110,
-  0b01101101,
-  0b01111101, # 6
+  0b11011011,
+  0b11001111,
+  0b11100110,
+  0b11101101,
+  0b11111101, # 6
   0b00000111,
-  0b01111111,
-  0b01101111, # 9
+  0b11111111,
+  0b11101111, # 9
   0b00000000  # off
 ]
 
@@ -106,8 +106,8 @@ os.dupterm(logfile)
 '''
 def wifi_connect():
     # Load login data from different file for safety reasons
-    ssid = 'WiFi' # secrets['ssid']
-    password = '0400553043' # secrets['pw']
+    ssid = 'ssid' # secrets['ssid']
+    password = 'pwd' # secrets['pw']
 
     # Connect to WiFi
     wlan = network.WLAN(network.STA_IF)
@@ -136,16 +136,22 @@ def wifi_connect():
    Return: cet
 '''
 # DST calculations - modified to AEST/AEDT from the original
-# Changes happen first Sunday of March and October at 02:00 local time
+# Changes happen first Sunday of April and October at 02:00 local time
 # Ref. formulas : http://www.webexhibits.org/daylightsaving/i.html
 #                 Since 1996, valid through 2099
 
 
 def cet_time():
     year = time.localtime()[0]       #get current year
-    HHApril   = time.mktime((year,4 ,(31-(int(5*year/4+4))%7),1,0,0,0,0,0)) # In April drop back to AEST
-    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),1,0,0,0,0,0)) # Advance to DST in October 
+    HHApril   = time.mktime((year,4 ,30-(int(5*year/4)+4)%7,3,0,0,0,0,0)) # In April drop back to AEST
+    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),2,0,0,0,0,0)) # Advance to DST in October 
     now=time.time()
+    
+    s = time.localtime(HHApril)
+    print(f'HHApril = {HHApril}, {s}')
+    s = time.localtime(HHOctober)
+    print(f'HHOctober = {HHOctober}, {s}')
+    
     if now < HHApril :               # we are before first sunday in April (AEDT)
         cet=time.localtime(now+39600) # AEDT:  UTC+11
         print("we are on Summer time: Jan - April")
@@ -171,7 +177,7 @@ def set_time():
     print("UTC time synchronization：%s" %str(time.localtime()))
     
     # if needed, we'll cycle over ntp-servers here using:
-    # ntptime.host = "1.europe.pool.ntp.org"
+    ntptime.host = "au.pool.ntp.org"
     
     try:
         ntptime.settime()
@@ -258,14 +264,14 @@ A 'value' of -1 is the signal to blank the character
 '''
 def show_char(value, display_number):
 
-    print(f'show_char reports value = {int(value)} & display is {display_number}')
+    #print(f'show_char reports value = {int(value)} & display is {display_number}')
     # segment_walk = 0b00000001
-    for x in range (0,6):
+    for x in range (0,7):
         greig = chartable[int(value)]  & (0b00000001 << x)
         anode[x].value(greig)
         pass
     cathode[display_number].on()
-    time.sleep_ms(20)
+    time.sleep_ms(2)
     cathode[display_number].off()
                   
     #digitalWriteFast(tensPinTable[0],(chartable[ten]  & 0b00000001)); // a
@@ -306,3 +312,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
