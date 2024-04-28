@@ -45,7 +45,7 @@ cathode = [
 
 UTC_OFFSET = 10 * 60 * 60 # in seconds
 
-display_seconds = True	# 'display' will rwite to six segments when true, four otherwise
+display_seconds = True	# 'display' will write to six segments when true, four otherwise
 display_12hr	= True	# 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
 blank = False			# Future - manually blank the display
 
@@ -264,9 +264,9 @@ def show_char(value, display_number):
         greig = chartable[int(value)]  & (0b00000001 << x)
         anode[x].value(greig)
         pass
-    cathode[display_number].on
+    cathode[display_number].on()
     time.sleep_ms(20)
-    cathode[display_number].off
+    cathode[display_number].off()
                   
     #digitalWriteFast(tensPinTable[0],(chartable[ten]  & 0b00000001)); // a
     #digitalWriteFast(tensPinTable[1],(chartable[ten]  & 0b00000010)); // b
