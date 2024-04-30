@@ -8,6 +8,7 @@ import time
 import utime
 import network # for Wifi
 from machine import Pin # for LED
+from machine import Timer # for timer-based interrupts
 
 # using https://mpython.readthedocs.io/en/master/library/micropython/ntptime.html
 import ntptime
@@ -38,10 +39,9 @@ cathode = [
     Pin(13, Pin.OUT)  # _S
     ]
 
-#//////////////////////////////////
-#//    Declare some constants    //
-#//////////////////////////////////
-
+'''
+constants
+'''
 
 UTC_OFFSET = 10 * 60 * 60 # in seconds
 
@@ -60,10 +60,6 @@ tm_sec  = 5 # range [0, 61] in strftime() description
 tm_wday = 6 # range 8[0, 6] Monday = 0
 tm_yday = 7 # range [0, 366]
 tm_isdst = 8 # 0, 1 or -1 
-
-# Global to check if time is set
-time_is_set = False
-wifi_is_connected = False
 
 
 #   Bitmap calc's to directly address the segments:
@@ -93,6 +89,17 @@ chartable = [
   0b00000000  # off
 ]
 
+'''
+variables
+'''
+
+t = 0, 0, 0, 0, 0, 0, 0, 0	#The clock will display this on power-up until WiFi connects and we get the time from NTP.
+
+# Global to check if time is set
+time_is_set = False
+wifi_is_connected = False
+
+
 # Logging
 import os
 logfile = open('log.txt', 'a')
@@ -107,7 +114,7 @@ os.dupterm(logfile)
 def wifi_connect():
     # Load login data from different file for safety reasons
     ssid = 'ssid' # secrets['ssid']
-    password = 'pwd' # secrets['pw']
+    password = 'password' # secrets['pw']
 
     # Connect to WiFi
     wlan = network.WLAN(network.STA_IF)
@@ -170,6 +177,7 @@ def cet_time():
 '''
 def set_time():
     # ntp_host = ["0.europe.pool.ntp.org", "1.europe.pool.ntp.org", "2.europe.pool.ntp.org", "3.europe.pool.ntp.org"] # Not used
+    global t
     
     if not wifi_is_connected:
         print("Wifi is not connected, connecting")
@@ -199,9 +207,9 @@ def set_time():
     #print("Disconnected WiFi")
 
 '''
-    schedule() function
-    Parameters: t
-    Return: none
+schedule() function
+Parameters: t
+Return: none
 '''
 
 # Todo: create crontab like structure with: minute / hour / day of month / month / day of week / command
@@ -224,13 +232,16 @@ It then calls 'show_char' 4 (or 6) times.
 Segments are the ANODES for this common-cathode display
 Cathodes are the common cathode of each character respectively.
 '''
-def display(t):
-
+def display(junk):
+    global t
+    
     # display_seconds = True	# 'display' will write to six segments when true, four otherwise
     # display_12hr	= True	# 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
 
     # Time 't' is a tuple containing year, month, mday, hour (24 hour format), minute, second, weekday, yearday
     _, _, _, HH, MM, SS, _, _ = t
+    
+    SS = 4
   
     # Write the hour. If display_12hr = True, convert to 12 hour time and blank the leading digit if it's a zero:
     if display_12hr == True:
@@ -264,33 +275,39 @@ A 'value' of -1 is the signal to blank the character
 '''
 def show_char(value, display_number):
 
-    #print(f'show_char reports value = {int(value)} & display is {display_number}')
-    # segment_walk = 0b00000001
+    #if (display_number) == 0:
+    #    cathode[3].off()
+    #else:
+    #    cathode[display_number - 1].off()
+    
+    for y in range (0,3):
+        cathode[y].off()
     for x in range (0,7):
         greig = chartable[int(value)]  & (0b00000001 << x)
-        anode[x].value(greig)
-        pass
+        anode[x].value(greig) # A 1 turns the GPIO pin on/high and a 0 is off/low
+        time.sleep_ms(100)
+
     cathode[display_number].on()
     time.sleep_ms(2)
-    cathode[display_number].off()
-                  
-    #digitalWriteFast(tensPinTable[0],(chartable[ten]  & 0b00000001)); // a
-    #digitalWriteFast(tensPinTable[1],(chartable[ten]  & 0b00000010)); // b
-    #digitalWriteFast(tensPinTable[2],(chartable[ten]  & 0b00000100)); // c
-    #digitalWriteFast(tensPinTable[3],(chartable[ten]  & 0b00001000)); // d
-    #digitalWriteFast(tensPinTable[4],(chartable[ten]  & 0b00010000)); // e
-    #digitalWriteFast(tensPinTable[5],(chartable[ten]  & 0b00100000)); // f
-    #digitalWriteFast(tensPinTable[6],(chartable[ten]  & 0b01000000)); // g
+    
 
-  
-  
+'''
+Instantiate timer & ISR
+'''
+
+# Instantiate the IRQ timer
+timer = Timer()
+
+# Attach the interrupt
+timer.init(mode=Timer.PERIODIC, freq=1000, callback=display)
 
 
-#//////////////////////////////////
-#//            MAIN             //
-#//////////////////////////////////
-
+'''
+MAIN
+'''
 def main():
+    global t
+    
     if not time_is_set:
         set_time()
         
@@ -298,16 +315,15 @@ def main():
     o_sec = time.localtime()[5]
 
     while True:
-        if not blank:
-            display(t)		# Write the time to the LEDs
-        t = time.localtime()	# read the current time
+        # if not blank:
+        #    display(t)		# Write the time to the LEDs
         if  o_sec != t[5]:		# Every second, toggle the on-board LED & check the schedule
+            t = time.localtime()	# read the current time
             o_sec = t[5]
             led.on()
             schedule(t)
             # print(t)
             led.off()
-
 
 
 if __name__ == '__main__':
