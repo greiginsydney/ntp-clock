@@ -243,14 +243,14 @@ def display(t):
         units_value = HH % 10
         show_char(units_value, 1)
     else:
-        tens_value = HH / 10
+        tens_value = int(HH / 10)
         show_char(tens_value, 0)
         units_value = HH % 10    
         show_char(units_value, 1)
     
     count = 2
     for value in MM, SS:
-        tens_value = value / 10
+        tens_value = int(value / 10)
         show_char(tens_value, count)
         count += 1
         units_value = value % 10    
