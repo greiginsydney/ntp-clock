@@ -1,3 +1,4 @@
+   
 # NTP Timer
 # Based on : https://github.com/lammersch/ntp-timer/blob/main/ntp_timer.py
 # Modified by Greig for LED multiplex drive.
@@ -98,7 +99,6 @@ t = 0, 0, 0, 0, 0, 0, 0, 0	#The clock will display this on power-up until WiFi c
 # Global to check if time is set
 time_is_set = False
 wifi_is_connected = False
-
 
 # Logging
 import os
@@ -240,8 +240,9 @@ def display(junk):
 
     # Time 't' is a tuple containing year, month, mday, hour (24 hour format), minute, second, weekday, yearday
     _, _, _, HH, MM, SS, _, _ = t
-    
-    SS = 4
+  
+    #print(f'{HH}:{MM}:{SS} - {type(SS)}')
+    #return
   
     # Write the hour. If display_12hr = True, convert to 12 hour time and blank the leading digit if it's a zero:
     if display_12hr == True:
@@ -286,10 +287,10 @@ def show_char(value, display_number):
     for x in range (0,7):
         greig = chartable[int(value)]  & (0b00000001 << x)
         anode[x].value(greig) # A 1 turns the GPIO pin on/high and a 0 is off/low
-        time.sleep_ms(100)
+        #time.sleep_ms(100)
 
     cathode[display_number].on()
-    time.sleep_ms(2)
+    time.sleep_ms(4)
     
 
 '''
@@ -311,7 +312,7 @@ def main():
     
     if not time_is_set:
         set_time()
-        
+
     t = time.localtime()
     o_sec = time.localtime()[5]
 
@@ -329,4 +330,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
+    
