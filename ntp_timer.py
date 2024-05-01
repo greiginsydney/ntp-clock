@@ -275,13 +275,13 @@ A 'value' of -1 is the signal to blank the character
 '''
 def show_char(value, display_number):
 
-    #if (display_number) == 0:
-    #    cathode[3].off()
-    #else:
-    #    cathode[display_number - 1].off()
+    if (display_number) == 0:
+        cathode[5].off()
+    else:
+        cathode[display_number - 1].off()
     
-    for y in range (0,3):
-        cathode[y].off()
+    #for y in range (0,5):
+    #    cathode[y].off()
     for x in range (0,7):
         greig = chartable[int(value)]  & (0b00000001 << x)
         anode[x].value(greig) # A 1 turns the GPIO pin on/high and a 0 is off/low
