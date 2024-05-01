@@ -316,10 +316,10 @@ def main():
     o_sec = time.localtime()[5]
 
     while True:
+        t = time.localtime()	# read the current time
         # if not blank:
         #    display(t)		# Write the time to the LEDs
         if  o_sec != t[5]:		# Every second, toggle the on-board LED & check the schedule
-            t = time.localtime()	# read the current time
             o_sec = t[5]
             led.on()
             schedule(t)
