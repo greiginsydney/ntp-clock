@@ -239,7 +239,8 @@ def display(t):
         if HH < 10:
             show_char(10, 0)	# A value of 10 will blank the display
         else:
-            show_char(HH, 0)	#
+            tens_value = int(HH / 10)
+            show_char(tens_value, 0)
         units_value = HH % 10
         show_char(units_value, 1)
     else:
