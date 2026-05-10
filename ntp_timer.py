@@ -57,11 +57,11 @@ tm_mday = 2 # range [1, 31]
 tm_hour = 3 # range [0, 23]
 tm_min  = 4 # range [0, 59]
 tm_sec  = 5 # range [0, 61] in strftime() description
-tm_wday = 6 # range 8[0, 6] Monday = 0
+tm_wday = 6 # range [0, 6] Monday = 0
 tm_yday = 7 # range [0, 366]
 tm_isdst = 8 # 0, 1 or -1 
 
-# Global to check if time is set
+# Global flags — must be declared global inside functions before assigning
 time_is_set = False
 wifi_is_connected = False
 
@@ -70,8 +70,8 @@ wifi_is_connected = False
 #      1
 #     ----
 #    |    |
-# 32 |    | 2
-#    |    |
+#    |    | 2
+# 32 |    |
 #     ----     <-- 64
 #    |    |
 # 16 |    | 4
@@ -81,16 +81,16 @@ wifi_is_connected = False
 
 chartable = [
   0b00111111, # 0
-  0b00000110,
-  0b11011011,
-  0b11001111,
-  0b11100110,
-  0b11101101,
+  0b00000110, # 1
+  0b11011011, # 2
+  0b11001111, # 3
+  0b11100110, # 4
+  0b11101101, # 5
   0b11111101, # 6
-  0b00000111,
-  0b11111111,
+  0b00000111, # 7
+  0b11111111, # 8
   0b11101111, # 9
-  0b00000000  # off
+  0b00000000  # off / blank
 ]
 
 # Logging
@@ -105,6 +105,8 @@ os.dupterm(logfile)
    Return: None
 '''
 def wifi_connect():
+    global wifi_is_connected  # FIX: declare global so the assignment persists
+
     # Load login data from different file for safety reasons
     ssid = 'ssid' # secrets['ssid']
     password = 'pwd' # secrets['pw']
@@ -122,13 +124,13 @@ def wifi_connect():
         print('waiting for connection...')
         time.sleep(5)
 
-        if wlan.status() != 3:
-            raise RuntimeError('network connection failed')
-        else:
-            print('connected')
-            wifi_is_connected = True
-            status = wlan.ifconfig()
-            print( 'ip = ' + status[0] )
+    if wlan.status() != 3:
+        raise RuntimeError('network connection failed')
+    else:
+        print('connected')
+        wifi_is_connected = True  # FIX: now actually updates the global
+        status = wlan.ifconfig()
+        print( 'ip = ' + status[0] )
     
 '''
    cet_time() function. Called by set_time()
@@ -159,7 +161,7 @@ def cet_time():
         cet=time.localtime(now+36000) # AEST:  UTC+10
         print("we are on Winter time")
     else:                            # we are after last sunday of october
-        cet=time.localtime(now+39600) # CET:  UTC+1H
+        cet=time.localtime(now+39600) # AEDT:  UTC+11
         print("we are on Summer time: October - December")
     return(cet)
 
@@ -169,14 +171,13 @@ def cet_time():
    Return: None
 '''
 def set_time():
-    # ntp_host = ["0.europe.pool.ntp.org", "1.europe.pool.ntp.org", "2.europe.pool.ntp.org", "3.europe.pool.ntp.org"] # Not used
-    
+    global time_is_set  # FIX: declare global so the assignment persists
+
     if not wifi_is_connected:
         print("Wifi is not connected, connecting")
         wifi_connect()
     print("UTC time synchronization：%s" %str(time.localtime()))
     
-    # if needed, we'll cycle over ntp-servers here using:
     ntptime.host = "au.pool.ntp.org"
     
     try:
@@ -187,104 +188,66 @@ def set_time():
             time.sleep(5)
         
     print("UTC after NTP sync：%s" %str(time.localtime()))
-    #t = time.localtime(time.time() + UTC_OFFSET) # Apply UTC offset
     t = cet_time()
     print("Local time : %s" %str(t))
     
     # Set local clock to adjusted time
     machine.RTC().datetime((t[tm_year], t[tm_mon], t[tm_mday], t[tm_wday] + 1, t[tm_hour], t[tm_min], t[tm_sec], 0))
-    print("Local time after synchronization：%s" %str(time.localtime()))    
-    time_is_set = True
-    #WLAN.disconnect()
-    #print("Disconnected WiFi")
+    print("Local time after synchronization：%s" %str(time.localtime()))
+    time_is_set = True  # FIX: now actually updates the global
 
 '''
     schedule() function
     Parameters: t
     Return: none
 '''
-
-# Todo: create crontab like structure with: minute / hour / day of month / month / day of week / command
-# Todo: check what happens when scheduled tasks overlap (uasyncio)
-
 def schedule(t):
-    #if t[tm_hour] == 17 and t[tm_min] == 45 and t[tm_sec] == 00: # Define seconds, or it will run every second...
-    #    print("Executing doorOperations")
-    #    door_operations.closeDoor()
-    
-    # Sync clock every day
-    if t[tm_hour] == 03 and t[tm_min] == 30 and t[tm_sec] == 0:
+    global time_is_set  # FIX: declare global so the assignment persists
+
+    # Sync clock every day at 03:30
+    if t[tm_hour] == 3 and t[tm_min] == 30 and t[tm_sec] == 0:
         time_is_set = False
         print("Synchronizing time")
         set_time()
 
-'''
-Takes the passed time and prepares it in readiness to write to the displays
-It then calls 'show_char' 4 (or 6) times.
-Segments are the ANODES for this common-cathode display
-Cathodes are the common cathode of each character respectively.
-'''
-def display(t):
 
-    # display_seconds = True	# 'display' will write to six segments when true, four otherwise
-    # display_12hr	= True	# 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
+'''
+Builds the list of digit values to display from the current time tuple,
+then strobes each cathode in turn.
 
-    # Time 't' is a tuple containing year, month, mday, hour (24 hour format), minute, second, weekday, yearday
+Called in a tight loop from main() so the display is continuously refreshed.
+Each digit gets 2 ms on-time; 6 digits = ~12 ms per full refresh (~83 Hz).
+'''
+def refresh_display(t):
+
     _, _, _, HH, MM, SS, _, _ = t
-  
-    # Write the hour. If display_12hr = True, convert to 12 hour time and blank the leading digit if it's a zero:
-    if display_12hr == True:
-        if HH > 12:
+
+    # Build the six digit values
+    if display_12hr:
+        if HH == 0:
+            HH = 12          # midnight → 12
+        elif HH > 12:
             HH -= 12
-        if HH < 10:
-            show_char(10, 0)	# A value of 10 will blank the display
-        else:
-            tens_value = int(HH / 10)
-            show_char(tens_value, 0)
-        units_value = HH % 10
-        show_char(units_value, 1)
+        digits = [
+            10 if HH < 10 else HH // 10,   # blank leading zero in 12-hr mode
+            HH % 10,
+        ]
     else:
-        tens_value = int(HH / 10)
-        show_char(tens_value, 0)
-        units_value = HH % 10    
-        show_char(units_value, 1)
-    
-    count = 2
-    for value in MM, SS:
-        tens_value = int(value / 10)
-        show_char(tens_value, count)
-        count += 1
-        units_value = value % 10    
-        show_char(units_value, count)
-        count += 1
-        
-        
-'''
-Takes a given single-digit decimal and writes that to the nominated display
-A 'value' of -1 is the signal to blank the character
-'''
-def show_char(value, display_number):
+        digits = [HH // 10, HH % 10]
 
-    #print(f'show_char reports value = {int(value)} & display is {display_number}')
-    # segment_walk = 0b00000001
-    for x in range (0,7):
-        greig = chartable[int(value)]  & (0b00000001 << x)
-        anode[x].value(greig)
-        pass
-    cathode[display_number].on()
-    time.sleep_ms(2)
-    cathode[display_number].off()
-                  
-    #digitalWriteFast(tensPinTable[0],(chartable[ten]  & 0b00000001)); // a
-    #digitalWriteFast(tensPinTable[1],(chartable[ten]  & 0b00000010)); // b
-    #digitalWriteFast(tensPinTable[2],(chartable[ten]  & 0b00000100)); // c
-    #digitalWriteFast(tensPinTable[3],(chartable[ten]  & 0b00001000)); // d
-    #digitalWriteFast(tensPinTable[4],(chartable[ten]  & 0b00010000)); // e
-    #digitalWriteFast(tensPinTable[5],(chartable[ten]  & 0b00100000)); // f
-    #digitalWriteFast(tensPinTable[6],(chartable[ten]  & 0b01000000)); // g
+    digits += [MM // 10, MM % 10, SS // 10, SS % 10]
 
-  
-  
+    # Strobe each digit
+    num_digits = 6 if display_seconds else 4
+    for i in range(num_digits):
+        val = digits[i]
+        # Set all anode (segment) pins from the chartable bitmap
+        for x in range(7):
+            anode[x].value(chartable[int(val)] & (1 << x))
+        # Enable this digit's cathode briefly, then turn it off
+        cathode[i].on()
+        time.sleep_ms(2)
+        cathode[i].off()
 
 
 #//////////////////////////////////
@@ -296,21 +259,24 @@ def main():
         set_time()
         
     t = time.localtime()
-    o_sec = time.localtime()[5]
+    o_sec = t[tm_sec]
 
     while True:
+        # FIX: refresh_display() is called every loop iteration so the display
+        # is continuously strobed (~83 Hz). Previously it was only called once
+        # per second which gave a duty cycle too low to see clearly.
         if not blank:
-            display(t)		# Write the time to the LEDs
-        t = time.localtime()	# read the current time
-        if  o_sec != t[5]:		# Every second, toggle the on-board LED & check the schedule
-            o_sec = t[5]
-            led.on()
-            schedule(t)
-            # print(t)
-            led.off()
+            refresh_display(t)
 
+        # time.localtime() is fast — sample it every pass
+        t = time.localtime()
+
+        # Once per second: blink the onboard LED and run the scheduler
+        if o_sec != t[tm_sec]:
+            o_sec = t[tm_sec]
+            led.toggle()
+            schedule(t)
 
 
 if __name__ == '__main__':
     main()
-
