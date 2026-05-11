@@ -1,6 +1,6 @@
 # NTP Timer
 # Based on : https://github.com/lammersch/ntp-timer/blob/main/ntp_timer.py
-# Modified by Greig for LED multiplex drive.
+# Modified by Greig for LED multiplex drive, with input from Claude.ai
 
 
 # Imports
@@ -262,6 +262,19 @@ def refresh_display(t):
 #//            MAIN             //
 #//////////////////////////////////
 
+'''
+    all_off() function. Called by the top-level finally block.
+    Extinguishes all segments and disables all cathodes so no
+    current flows through the display when the script exits.
+'''
+def all_off():
+    for pin in anode:
+        pin.off()
+    for pin in cathode:
+        pin.off()
+    led.off()
+
+
 def main():
     if not time_is_set:
         set_time()
@@ -283,4 +296,9 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f'Fatal error: {e}')
+    finally:
+        all_off()   # always extinguish the display on exit, whatever the cause
