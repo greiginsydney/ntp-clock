@@ -12,8 +12,8 @@ from machine import Pin # for LED
 # using https://mpython.readthedocs.io/en/master/library/micropython/ntptime.html
 import ntptime
 
-# to not show Wifi credentials in this code
-#from secrets import secrets
+# Wifi credentials are kept in a separate file — do not commit secrets.py to source control
+from secrets import secrets
 
 # Led for blinking
 led = machine.Pin("LED", machine.Pin.OUT)
@@ -42,23 +42,20 @@ cathode = [
 #//    Declare some constants    //
 #//////////////////////////////////
 
-
-UTC_OFFSET = 10 * 60 * 60 # in seconds
-
-display_seconds = True	# 'display' will write to six segments when true, four otherwise
-display_12hr	= True	# 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
-blank = False			# Future - manually blank the display
+display_seconds = True  # 'display' will write to six segments when true, four otherwise
+display_12hr    = True  # 12 or 24 hour clock mode. Twelve hour mode implies leading hour zero digit suppression.
+blank = False           # Future - manually blank the display
 
 # Make naming more convenient
 # See: https://docs.python.org/3/library/time.html#time.struct_time
-tm_year = 0
-tm_mon  = 1 # range [1, 12]
-tm_mday = 2 # range [1, 31]
-tm_hour = 3 # range [0, 23]
-tm_min  = 4 # range [0, 59]
-tm_sec  = 5 # range [0, 61] in strftime() description
-tm_wday = 6 # range [0, 6] Monday = 0
-tm_yday = 7 # range [0, 366]
+tm_year  = 0
+tm_mon   = 1 # range [1, 12]
+tm_mday  = 2 # range [1, 31]
+tm_hour  = 3 # range [0, 23]
+tm_min   = 4 # range [0, 59]
+tm_sec   = 5 # range [0, 61] in strftime() description
+tm_wday  = 6 # range [0, 6] Monday = 0
+tm_yday  = 7 # range [0, 366]
 tm_isdst = 8 # 0, 1 or -1 
 
 # Global flags — must be declared global inside functions before assigning
@@ -95,9 +92,16 @@ chartable = [
 
 # Logging
 import os
-logfile = open('log.txt', 'a')
-# duplicate stdout and stderr to the log file
-os.dupterm(logfile)
+try:
+    logfile = open('log.txt', 'a')
+    os.dupterm(logfile)
+except Exception as e:
+    print(f'Warning: could not open log file: {e}')
+
+
+#//////////////////////////////////
+#//         FUNCTIONS           //
+#//////////////////////////////////
 
 '''
    wifi_connect() function. Called by set_time()
@@ -105,33 +109,34 @@ os.dupterm(logfile)
    Return: None
 '''
 def wifi_connect():
-    global wifi_is_connected  # FIX: declare global so the assignment persists
+    global wifi_is_connected
 
-    # Load login data from different file for safety reasons
-    ssid = 'ssid' # secrets['ssid']
-    password = 'pwd' # secrets['pw']
+    ssid     = secrets['ssid']
+    password = secrets['pw']
 
-    # Connect to WiFi
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     wlan.connect(ssid, password)
 
-    max_wait = 10
+    max_wait = 10                        # FIX: was accidentally removed in previous edit
     while max_wait > 0:
-        if wlan.status() < 0 or wlan.status() >= 3:
+        status = wlan.status()
+        print(f'wlan status: {status}')  # 0=idle, 1=connecting, 2=wrong password, 3=connected, -1=failed, -2=no AP, -3=failed
+        if status < 0 or status >= 3:
             break
         max_wait -= 1
-        print('waiting for connection...')
-        time.sleep(5)
+        time.sleep(1)
 
+    # This check runs AFTER the loop exits
     if wlan.status() != 3:
         raise RuntimeError('network connection failed')
-    else:
-        print('connected')
-        wifi_is_connected = True  # FIX: now actually updates the global
-        status = wlan.ifconfig()
-        print( 'ip = ' + status[0] )
-    
+
+    print('connected')
+    wifi_is_connected = True
+    status = wlan.ifconfig()
+    print('ip = ' + status[0])
+
+
 '''
    cet_time() function. Called by set_time()
    Parameters: None
@@ -142,69 +147,72 @@ def wifi_connect():
 # Ref. formulas : http://www.webexhibits.org/daylightsaving/i.html
 #                 Since 1996, valid through 2099
 
-
 def cet_time():
-    year = time.localtime()[0]       #get current year
+    year = time.localtime()[0]       # get current year
     HHApril   = time.mktime((year,4 ,30-(int(5*year/4)+4)%7,3,0,0,0,0,0)) # In April drop back to AEST
-    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),2,0,0,0,0,0)) # Advance to DST in October 
-    now=time.time()
+    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),2,0,0,0,0,0)) # Advance to DST in October
+    now = time.time()
     
     s = time.localtime(HHApril)
     print(f'HHApril = {HHApril}, {s}')
     s = time.localtime(HHOctober)
     print(f'HHOctober = {HHOctober}, {s}')
     
-    if now < HHApril :               # we are before first sunday in April (AEDT)
-        cet=time.localtime(now+39600) # AEDT:  UTC+11
+    if now < HHApril:                   # before first Sunday in April (still AEDT from previous year)
+        cet = time.localtime(now+39600) # AEDT: UTC+11
         print("we are on Summer time: Jan - April")
-    elif now < HHOctober :           # we are before last sunday in october (Winter time)
-        cet=time.localtime(now+36000) # AEST:  UTC+10
+    elif now < HHOctober:               # between April and October (AEST)
+        cet = time.localtime(now+36000) # AEST: UTC+10
         print("we are on Winter time")
-    else:                            # we are after last sunday of october
-        cet=time.localtime(now+39600) # AEDT:  UTC+11
+    else:                               # after first Sunday in October (AEDT)
+        cet = time.localtime(now+39600) # AEDT: UTC+11
         print("we are on Summer time: October - December")
-    return(cet)
+    return cet
+
 
 '''
-   set_time() function. Called by main()
+   set_time() function. Called by main() and schedule()
    Parameters: None
    Return: None
 '''
 def set_time():
-    global time_is_set  # FIX: declare global so the assignment persists
+    global time_is_set, wifi_is_connected  # FIX: wifi_is_connected added so the read doesn't throw NameError
 
     if not wifi_is_connected:
         print("Wifi is not connected, connecting")
         wifi_connect()
-    print("UTC time synchronization：%s" %str(time.localtime()))
-    
+
+    print("UTC time before sync: %s" % str(time.localtime()))
+
     ntptime.host = "au.pool.ntp.org"
-    
+
     try:
         ntptime.settime()
     except OSError as exc:
         if exc.args[0] == 110: # ETIMEDOUT
-            print("ETIMEDOUT. Returning False")
-            time.sleep(5)
-        
-    print("UTC after NTP sync：%s" %str(time.localtime()))
+            print("ETIMEDOUT. Returning without updating time.")
+            return              # bail out cleanly rather than continuing with unsynced time
+        raise                   # re-raise unexpected errors
+
+    print("UTC after NTP sync: %s" % str(time.localtime()))
     t = cet_time()
-    print("Local time : %s" %str(t))
-    
+    print("Local time: %s" % str(t))
+
     # Set local clock to adjusted time
     machine.RTC().datetime((t[tm_year], t[tm_mon], t[tm_mday], t[tm_wday] + 1, t[tm_hour], t[tm_min], t[tm_sec], 0))
-    print("Local time after synchronization：%s" %str(time.localtime()))
-    time_is_set = True  # FIX: now actually updates the global
+    print("Local time after synchronization: %s" % str(time.localtime()))
+    time_is_set = True
+
 
 '''
-    schedule() function
-    Parameters: t
-    Return: none
+    schedule() function. Called once per second from main()
+    Parameters: t — current time tuple
+    Return: None
 '''
 def schedule(t):
-    global time_is_set  # FIX: declare global so the assignment persists
+    global time_is_set
 
-    # Sync clock every day at 03:30
+    # Sync clock every day at 03:30:00
     if t[tm_hour] == 3 and t[tm_min] == 30 and t[tm_sec] == 0:
         time_is_set = False
         print("Synchronizing time")
@@ -225,7 +233,7 @@ def refresh_display(t):
     # Build the six digit values
     if display_12hr:
         if HH == 0:
-            HH = 12          # midnight → 12
+            HH = 12             # midnight -> 12
         elif HH > 12:
             HH -= 12
         digits = [
@@ -257,21 +265,17 @@ def refresh_display(t):
 def main():
     if not time_is_set:
         set_time()
-        
+
     t = time.localtime()
     o_sec = t[tm_sec]
 
     while True:
-        # FIX: refresh_display() is called every loop iteration so the display
-        # is continuously strobed (~83 Hz). Previously it was only called once
-        # per second which gave a duty cycle too low to see clearly.
         if not blank:
-            refresh_display(t)
+            refresh_display(t)  # continuously strobed — do not move outside the loop
 
-        # time.localtime() is fast — sample it every pass
-        t = time.localtime()
+        t = time.localtime()    # time.localtime() is fast, sample every pass
 
-        # Once per second: blink the onboard LED and run the scheduler
+        # Once per second: toggle the onboard LED and run the scheduler
         if o_sec != t[tm_sec]:
             o_sec = t[tm_sec]
             led.toggle()
