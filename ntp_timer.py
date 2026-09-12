@@ -95,6 +95,24 @@ cathode = [
 # GP26 (ADC0) is already taken above by the 'dp' anode, so this uses GP27
 # (ADC1). GP28 (ADC2) is the other free ADC-capable pin if you'd rather
 # use that one instead.
+#
+# REQUIRED WIRING for read_brightness_on_us() below to dim correctly as
+# ambient light drops: the LDR goes on the TOP leg, 3V3 -> LDR -> (GP27) -> fixed
+# resistor -> GND. GP27 taps the midpoint. With the LDR on top, brighter
+# ambient light means LOWER LDR resistance, which means the fixed bottom
+# resistor claims a BIGGER share of the 3.3V, so the voltage at GP27 (and
+# the raw ADC reading) goes UP as the room gets brighter — which is what
+# read_brightness_on_us() below assumes when it uses `raw` directly to
+# mean "more light". A reasonable fixed resistor value to start with is
+# whatever puts the LDR's own dark/light resistance swing roughly centred
+# on the ADC's usable range — 10k is a common starting point for a typical
+# LDR, but check yours.
+#
+# If you wire it the other way around (LDR on the bottom, to GND, fixed
+# resistor on top to 3V3) the relationship inverts — brighter light would
+# then mean a LOWER raw reading — and you'd need to swap `raw` for
+# `(65535 - raw)` in read_brightness_on_us() to compensate. Wiring it as
+# specified above means you don't have to touch that function at all.
 ldr = ADC(Pin(27))
 
 #//////////////////////////////////
@@ -109,9 +127,15 @@ blank = False           # Future - manually blank the display
 # of that slice it's lit, the remainder it's dark. Keeping the slot length
 # constant (rather than just shortening it) means the refresh rate doesn't
 # change with brightness, only the perceived duty cycle does.
-SLOT_US   = 2000     # total time budget per digit, in microseconds (== the old fixed on-time)
-MIN_ON_US = 300      # dimmest setting — tune to taste, some visible light at the low end
-MAX_ON_US = SLOT_US  # brightest setting — full slot on, same as the original behaviour
+#
+# NEW-v5 — set the floor/ceiling here, as a percentage of the slot, rather
+# than juggling microseconds directly:
+MIN_BRIGHTNESS_PCT = 15   # dimmest allowed, even on a pitch-black night — tune to taste
+MAX_BRIGHTNESS_PCT = 100  # brightest allowed, even in full sun (100 = old always-on-in-slot behaviour)
+
+SLOT_US   = 2000  # total time budget per digit, in microseconds (== the old fixed on-time)
+MIN_ON_US = SLOT_US * MIN_BRIGHTNESS_PCT // 100  # derived — edit the PCT constants above, not these
+MAX_ON_US = SLOT_US * MAX_BRIGHTNESS_PCT // 100
 
 # NEW-v3 — watchdog tuning.
 WDT_TIMEOUT_MS      = 4000  # hardware ceiling on rp2040 is 8388ms; comfortably under that.
@@ -268,6 +292,12 @@ def first_sunday_epoch(year, month, hour):
 # NEW-v4: the boundary DATES now come from first_sunday_epoch() above;
 # everything else here (which hour each transition uses, and the
 # before/between/after comparison logic) is unchanged from the original.
+#
+# v5 changes: brightness floor/ceiling are now set as MIN/MAX_BRIGHTNESS_PCT
+# (0-100%) instead of raw microseconds — same MIN_ON_US/MAX_ON_US as before
+# under the hood, just easier to reason about when tuning. Also firmed up
+# the LDR wiring comment into a definite instruction rather than an
+# assumption, per Greig's question about which way around to wire it.
 
 def cet_time():
     year = time.localtime()[0]       # get current year
@@ -331,10 +361,11 @@ def set_time():
    Parameters: None
    Return: a digit on-time in microseconds, somewhere in [MIN_ON_US, MAX_ON_US]
 
-   Assumes the LDR is wired as the TOP leg of a divider (3V3 -> LDR -> ADC
-   node -> resistor -> GND), so a HIGHER raw reading means MORE ambient
-   light. If your wiring is the other way around (LDR to GND instead),
-   swap `raw` for `(65535 - raw)` below.
+   Requires the LDR wired as the TOP leg of the divider (3V3 -> LDR -> GP27
+   -> resistor -> GND — see the wiring note above `ldr = ADC(Pin(27))`),
+   so a HIGHER raw reading means MORE ambient light. If you wire it the
+   other way around (LDR to GND instead), swap `raw` for `(65535 - raw)`
+   below.
 '''
 def read_brightness_on_us():
     raw = ldr.read_u16()  # 0-65535 across 0.0V-3.3V
