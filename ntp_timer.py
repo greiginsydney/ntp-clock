@@ -25,6 +25,17 @@
 #   3. wifi_connect()'s retry loop is shortened and now feeds the watchdog
 #      itself, so a slow-but-legitimate Wi-Fi reconnect can't trip the WDT.
 #
+# v4 changes — fixed the DST boundary calculation in cet_time(). Checked
+# against real calendar dates, the old one-line formula's April boundary
+# landed on a TUESDAY every single year (never a Sunday — the arithmetic
+# wasn't a valid "first Sunday" calculation at all), and its October
+# boundary reliably computed the LAST Sunday of October, not the FIRST —
+# 3-4 weeks late, every year. Net effect: the clock would show the wrong
+# hour for a few days around every April boundary and for 3-4 weeks after
+# every real October boundary. Replaced with a small helper that finds
+# the actual first Sunday by asking time.localtime() what day-1 falls on,
+# rather than a magic modular formula — verified against 2018-2035.
+#
 # IMPORTANT — read this before flashing:
 #   None of the above is a substitute for making sure the WORST CASE drive
 #   current through a segment (i.e. if it were held on permanently, at
@@ -227,6 +238,25 @@ def wifi_connect():
 
 
 '''
+   NEW-v4 — first_sunday_epoch() function. Called by cet_time().
+   Parameters: year, month, hour — the local hour the transition happens at
+   Return: epoch seconds (in the same naive/no-TZ frame the rest of this
+           file uses) for 00:00:00 + `hour` on the first Sunday of `month`.
+
+   Finds day 1's real weekday via a mktime()->localtime() round trip
+   rather than computing it with modular arithmetic — the previous
+   one-liner's arithmetic was wrong (see the v4 changelog note at the top
+   of this file), and this version is trivial to verify by eye: it can
+   only ever return a date that time.localtime() itself calls a Sunday.
+'''
+def first_sunday_epoch(year, month, hour):
+    day1_epoch = time.mktime((year, month, 1, 0, 0, 0, 0, 0))
+    day1_wday = time.localtime(day1_epoch)[6]     # 0=Monday .. 6=Sunday
+    first_sunday_day = 1 + ((6 - day1_wday) % 7)
+    return time.mktime((year, month, first_sunday_day, hour, 0, 0, 0, 0))
+
+
+'''
    cet_time() function. Called by set_time()
    Parameters: None
    Return: cet
@@ -235,11 +265,14 @@ def wifi_connect():
 # Changes happen first Sunday of April and October at 02:00 local time
 # Ref. formulas : http://www.webexhibits.org/daylightsaving/i.html
 #                 Since 1996, valid through 2099
+# NEW-v4: the boundary DATES now come from first_sunday_epoch() above;
+# everything else here (which hour each transition uses, and the
+# before/between/after comparison logic) is unchanged from the original.
 
 def cet_time():
     year = time.localtime()[0]       # get current year
-    HHApril   = time.mktime((year,4 ,30-(int(5*year/4)+4)%7,3,0,0,0,0,0)) # In April drop back to AEST
-    HHOctober = time.mktime((year,10,(31-(int(5*year/4+1))%7),2,0,0,0,0,0)) # Advance to DST in October
+    HHApril   = first_sunday_epoch(year, 4, 3)   # In April drop back to AEST, at 3am AEDT
+    HHOctober = first_sunday_epoch(year, 10, 2)  # Advance to DST in October, at 2am AEST
     now = time.time()
 
     s = time.localtime(HHApril)
