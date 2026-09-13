@@ -76,10 +76,10 @@ anode = [
     Pin(17, Pin.OUT), # b
     Pin(18, Pin.OUT), # c
     Pin(19, Pin.OUT), # d
-    Pin(20, Pin.OUT), # e
-    Pin(21, Pin.OUT), # f
-    Pin(22, Pin.OUT), # g
-    Pin(26, Pin.OUT)  # dp
+    Pin(21, Pin.OUT), # e
+    Pin(22, Pin.OUT), # f
+    Pin(26, Pin.OUT), # g
+    Pin(20, Pin.OUT)  # dp
     ]
 
 cathode = [
