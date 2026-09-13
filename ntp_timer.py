@@ -83,12 +83,12 @@ anode = [
     ]
 
 cathode = [
-    Pin( 8, Pin.OUT), # H_
-    Pin( 9, Pin.OUT), # _H
-    Pin(10, Pin.OUT), # M_
-    Pin(11, Pin.OUT), # _M
-    Pin(12, Pin.OUT), # S_
-    Pin(13, Pin.OUT)  # _S
+    Pin(13, Pin.OUT), # H_
+    Pin(12, Pin.OUT), # _H
+    Pin(11, Pin.OUT), # M_
+    Pin(10, Pin.OUT), # _M
+    Pin( 9, Pin.OUT), # S_
+    Pin( 8, Pin.OUT)  # _S
     ]
 
 # LDR for ambient brightness.
